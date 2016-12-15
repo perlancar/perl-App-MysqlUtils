@@ -8,6 +8,8 @@ use strict;
 use warnings;
 use Log::Any::IfLOG '$log';
 
+use Perinci::Object;
+
 our %SPEC;
 
 my %args_common = (
@@ -36,6 +38,7 @@ my %args_database = (
         schema => 'str*',
         req => 1,
         pos => 0,
+        completion => \&_complete_database,
     },
 );
 
@@ -62,8 +65,8 @@ sub _connect {
         "DBI:mysql:".
             join(";",
                  (defined $args{database} ? ("database=$args{database}") : ()),
-                 "host=$args{host}",
-                 "port=$args{port}",
+                 (defined $args{host} ? ("host=$args{host}") : ()),
+                 (defined $args{port} ? ("port=$args{port}") : ()),
              ),
         $args{username},
         $args{password},
@@ -78,9 +81,6 @@ sub _complete_database {
     # only run under pericmd
     my $cmdline = $args{cmdline} or return undef;
     my $r = $args{r};
-
-    # allow writing Mod::SubMod as Mod/SubMod
-    my $uses_slash = $word =~ s!/!::!g ? 1:0;
 
     # force read config file, because by default it is turned off when in
     # completion
@@ -112,6 +112,24 @@ $SPEC{mysql_drop_all_tables} = {
     },
 };
 sub mysql_drop_all_tables {
+    my %args = @_;
+
+    my $dbh = _connect(%args);
+
+    my @names = $dbh->tables(undef, undef, undef, undef);
+
+    my $res = envresmulti();
+    for (@names) {
+        if ($args{-dry_run}) {
+            $log->infof("[DRY_RUN] Dropping table %s ...", $_);
+            $res->add_result(304, "OK (dry-run)", {item_id=>$_});
+        } else {
+            $log->infof("Dropping table %s ...", $_);
+            $dbh->do("DROP TABLE $_");
+            $res->add_result(200, "OK", {item_id=>$_});
+        }
+    }
+    $res->as_struct;
 }
 
 1;
