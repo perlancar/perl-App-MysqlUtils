@@ -176,10 +176,10 @@ supply `--no-dry-run` or DRY_RUN=0.
 
 Examples:
 
-    # Drop table T1, T2, T3
+    # Drop table T1, T2, T3 (dry-run mode)
     % mysql-drop-tables DB T1 T2 T3
 
-    # Drop all tables with names matching /foo/
+    # Drop all tables with names matching /foo/ (dry-run mode)
     % mysql-drop-tables DB --table-pattern foo
 
     # Actually drop all tables with names matching /foo/, don't delete more than 5 tables
