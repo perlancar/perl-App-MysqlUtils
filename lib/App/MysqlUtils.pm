@@ -287,6 +287,10 @@ _
             pos => 0,
             cmdline_src => 'stdin_or_args',
         },
+        add_row_numbers => {
+            summary => 'Add first field containing number from 1, 2, ...',
+            schema => ['bool*', is=>1],
+        },
     },
 };
 sub mysql_query {
@@ -298,8 +302,14 @@ sub mysql_query {
     $sth->execute;
 
     my @columns = @{ $sth->{NAME_lc} };
+    if ($args{add_row_numbers}) {
+        unshift @columns, "_row"; # XXX what if columns contains '_row' already, we need to supply a unique name e.g. '_row2', ...
+    };
     my @rows;
+    my $i = 0;
     while (my $row = $sth->fetchrow_hashref) {
+        $i++;
+        $row->{_row} = $i if $args{add_row_numbers};
         push @rows, $row;
     }
 
