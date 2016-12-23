@@ -255,6 +255,57 @@ sub mysql_drop_tables {
     $res->as_struct;
 }
 
+$SPEC{mysql_query} = {
+    v => 1.1,
+    summary => 'Run query and return table result',
+    description => <<'_',
+
+This is like just regular querying, but the result will be returned as table
+data (formattable using different backends). Or, you can output as JSON.
+
+Examples:
+
+    # by default, show as pretty text table, like in interactive mysql client
+    % mysql-query DBNAME "SELECT * FROM t1"
+
+    # show as JSON (array of hashes)
+    % mysql-query DBNAME "QUERY..." --json ;# or, --format json
+
+    # show as CSV
+    % mysql-query DBNAME "QUERY..." --format csv
+
+    # show as CSV table using Text::Table::CSV
+    % FORMAT_PRETTY_TABLE_BACKEND=Text::Table::Org mysql-query DBNAME "QUERY..."
+
+_
+    args => {
+        %args_common,
+        %args_database,
+        query => {
+            schema => 'str*',
+            req => 1,
+            pos => 0,
+            cmdline_src => 'stdin_or_args',
+        },
+    },
+};
+sub mysql_query {
+    my %args = @_;
+
+    my $dbh = _connect(%args);
+
+    my $sth = $dbh->prepare($args{query});
+    $sth->execute;
+
+    my @columns = @{ $sth->{NAME_lc} };
+    my @rows;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @rows, $row;
+    }
+
+    [200, "OK", \@rows, {'table.fields'=>\@columns}];
+}
+
 1;
 #ABSTRACT:
 
