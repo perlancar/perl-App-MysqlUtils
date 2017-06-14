@@ -316,6 +316,54 @@ sub mysql_query {
     [200, "OK", \@rows, {'table.fields'=>\@columns}];
 }
 
+$SPEC{mysql_split_sql_dump_per_table} = {
+    v => 1.1,
+    summary => 'Parse SQL dump and spit out tables to separate files',
+    args => {
+        # XXX include_table
+        # XXX include_table_pattern
+        # XXX exclude_table
+        # XXX exclude_table_pattern
+        stop_after_table => {
+            schema => 'str*',
+        },
+        stop_after_table_pattern => {
+            schema => 're*',
+        },
+        # XXX output_file_pattern
+        # XXX overwrite
+    },
+};
+sub mysql_split_sql_dump_per_table {
+    my %args = @_;
+
+    my ($prevtbl, $curtbl, $pertblfile, $pertblfh);
+
+    # we use direct <>, instead of cmdline_src for speed
+    while (<>) {
+        if (/^(?:CREATE TABLE) `(.+)`/) {
+            $prevtbl = $curtbl;
+            if (defined $prevtbl && $args{stop_after_table} && $prevtbl eq $args{stop_after_table}) {
+                last;
+            } elsif (defined $prevtbl && $args{stop_after_table_pattern} && $prevtbl =~ $args{stop_after_table_pattern}) {
+                last;
+            }
+            $curtbl = $1;
+            $pertblfile = "$curtbl";
+            if (defined $prevtbl) {
+                close $pertblfh;
+                #say "Finished writing $pertblfile";
+            }
+            warn "Writing $pertblfile ...\n";
+            open $pertblfh, ">", $pertblfile or die "Can't open $pertblfile: $!";
+        }
+        next unless $curtbl;
+        print $pertblfh $_;
+    }
+
+    [200, "OK"];
+}
+
 1;
 #ABSTRACT:
 
