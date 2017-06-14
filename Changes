@@ -1,3 +1,8 @@
+0.004   2017-06-14 (PERLANCAR)
+
+	- Add utility: mysql-split-sql-dump-per-table.
+
+
 0.003   2016-12-23 (PERLANCAR)
 
 	- Add utility: mysql-query.
