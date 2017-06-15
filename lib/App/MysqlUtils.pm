@@ -25,10 +25,20 @@ my %args_common = (
     },
     username => {
         schema => 'str*',
+        description => <<'_',
+
+Will try to get default from `~/.my.cnf`.
+
+_
         tags => ['category:connection'],
     },
     password => {
         schema => 'str*',
+        description => <<'_',
+
+Will try to get default from `~/.my.cnf`.
+
+_
         tags => ['category:connection'],
     },
 );
