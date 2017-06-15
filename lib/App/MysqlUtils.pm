@@ -336,7 +336,7 @@ sub mysql_query {
     [200, "OK", \@rows, {'table.fields'=>\@columns}];
 }
 
-$SPEC{mysql_split_sql_dump_per_table} = {
+$SPEC{mysql_sql_dump_extract_tables} = {
     v => 1.1,
     summary => 'Parse SQL dump and spit out tables to separate files',
     args => {
@@ -354,7 +354,7 @@ $SPEC{mysql_split_sql_dump_per_table} = {
         # XXX overwrite
     },
 };
-sub mysql_split_sql_dump_per_table {
+sub mysql_sql_dump_extract_tables {
     my %args = @_;
 
     my ($prevtbl, $curtbl, $pertblfile, $pertblfh);
