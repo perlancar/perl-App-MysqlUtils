@@ -8,7 +8,9 @@ use strict;
 use warnings;
 use Log::Any::IfLOG '$log';
 
+use IPC::System::Options qw(system);
 use Perinci::Object;
+use String::ShellQuote;
 
 our %SPEC;
 
@@ -43,12 +45,20 @@ _
     },
 );
 
-my %args_database = (
+my %args_database0 = (
     database => {
         schema => 'str*',
         req => 1,
         pos => 0,
         completion => \&_complete_database,
+    },
+);
+
+my %args_database = (
+    database => {
+        schema => 'str*',
+        req => 1,
+        cmdline_aliases => { db=>{} },
     },
 );
 
@@ -149,7 +159,7 @@ supply `--no-dry-run` or DRY_RUN=0.
 _
     args => {
         %args_common,
-        %args_database,
+        %args_database0,
     },
     features => {
         dry_run => {default=>1},
@@ -198,7 +208,7 @@ Examples:
 _
     args => {
         %args_common,
-        %args_database,
+        %args_database0,
         tables => {
             'x.name.is_plural' => 1,
             'x.name.singular' => 'table',
@@ -290,7 +300,7 @@ Examples:
 _
     args => {
         %args_common,
-        %args_database,
+        %args_database0,
         query => {
             schema => 'str*',
             req => 1,
@@ -369,6 +379,47 @@ sub mysql_split_sql_dump_per_table {
         }
         next unless $curtbl;
         print $pertblfh $_;
+    }
+
+    [200, "OK"];
+}
+
+$SPEC{mysql_run_sql_files} = {
+    v => 1.1,
+    summary => 'Feed each .sql file to `mysql` command and '.
+        'write result to .txt file',
+    args => {
+        sql_files => {
+            schema => ['array*', of=>'filename*'],
+            req => 1,
+            pos => 0,
+            greedy => 1,
+        },
+        %args_database,
+        # XXX output_file_pattern
+        # XXX overwrite
+    },
+    deps => {
+        prog => 'mysql',
+    },
+};
+sub mysql_run_sql_files {
+    my %args = @_;
+
+    for my $sqlfile (@{ $args{sql_files} }) {
+        my $txtfile = $sqlfile;
+        $txtfile =~ s/\.sql$/.txt/i;
+        if ($sqlfile eq $txtfile) { $txtfile .= ".txt" }
+        $log->infof("Running SQL file '%s' and putting result to '%s' ...",
+                    $sqlfile, $txtfile);
+        my $cmd = join(
+            " ",
+            "mysql",
+            shell_quote($args{database}),
+            "<", shell_quote($sqlfile),
+            ">", shell_quote($txtfile),
+        );
+        system({log=>1}, $cmd);
     }
 
     [200, "OK"];
