@@ -340,10 +340,30 @@ $SPEC{mysql_sql_dump_extract_tables} = {
     v => 1.1,
     summary => 'Parse SQL dump and spit out tables to separate files',
     args => {
-        # XXX include_table
-        # XXX include_table_pattern
-        # XXX exclude_table
-        # XXX exclude_table_pattern
+        include_tables => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'include_table',
+            schema => ['array*', of=>'str*'],
+            tags => ['category:filtering'],
+        },
+        exclude_tables => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'exclude_table',
+            schema => ['array*', of=>'str*'],
+            tags => ['category:filtering'],
+        },
+        include_table_patterns => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'include_table_pattern',
+            schema => ['array*', of=>'re*'],
+            tags => ['category:filtering'],
+        },
+        exclude_table_patterns => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'exclude_table_pattern',
+            schema => ['array*', of=>'re*'],
+            tags => ['category:filtering'],
+        },
         stop_after_table => {
             schema => 'str*',
         },
@@ -357,11 +377,34 @@ $SPEC{mysql_sql_dump_extract_tables} = {
 sub mysql_sql_dump_extract_tables {
     my %args = @_;
 
+    my $stop_after_tbl  = $args{stop_after_table};
+    my $stop_after_tpat = $args{stop_after_table_pattern};
+    my $inc_tbl  = $args{include_tables};
+    $inc_tbl  = undef unless $inc_tbl  && @$inc_tbl;
+    my $inc_tpat = $args{include_table_patterns};
+    $inc_tpat = undef unless $inc_tpat && @$inc_tpat;
+    my $exc_tbl  = $args{exclude_tables};
+    $exc_tbl  = undef unless $exc_tbl  && @$exc_tbl;
+    my $exc_tpat = $args{exclude_table_patterns};
+    $exc_tpat = undef unless $exc_tpat && @$exc_tpat;
+    my $has_tbl_filters = $inc_tbl || $inc_tpat || $exc_tbl || $exc_tpat;
+
     my ($prevtbl, $curtbl, $pertblfile, $pertblfh);
 
+    my $code_tbl_is_included = sub {
+        my $tbl = shift;
+        return 0 if $exc_tbl  && (grep { $tbl eq $_ } @$exc_tbl );
+        return 0 if $exc_tpat && (grep { $tbl =~ $_ } @$exc_tpat);
+        return 1 if $inc_tbl  && (grep { $tbl eq $_ } @$inc_tbl );
+        return 1 if $inc_tpat && (grep { $tbl =~ $_ } @$inc_tpat);
+        if ($inc_tbl || $inc_tpat) { return 0 } else { return 1 }
+    };
+
     # we use direct <>, instead of cmdline_src for speed
+    my %seentables;
     while (<>) {
-        if (/^(?:CREATE TABLE) `(.+)`/) {
+        if (/^(?:-- Table structure for table|-- Dumping data for table|CREATE TABLE IF NOT EXISTS|CREATE TABLE|DROP TABLE IF EXISTS) `(.+)`/) {
+            goto L1 if $seentables{$1}++;
             $prevtbl = $curtbl;
             if (defined $prevtbl && $args{stop_after_table} && $prevtbl eq $args{stop_after_table}) {
                 last;
@@ -370,14 +413,16 @@ sub mysql_sql_dump_extract_tables {
             }
             $curtbl = $1;
             $pertblfile = "$curtbl";
-            if (defined $prevtbl) {
-                close $pertblfh;
-                #say "Finished writing $pertblfile";
+            if ($has_tbl_filters && !$code_tbl_is_included->($curtbl)) {
+                warn "SKIPPING table $curtbl\n";
+                undef $pertblfh;
+            } else {
+                warn "Writing $pertblfile ...\n";
+                open $pertblfh, ">", $pertblfile or die "Can't open $pertblfile: $!";
             }
-            warn "Writing $pertblfile ...\n";
-            open $pertblfh, ">", $pertblfile or die "Can't open $pertblfile: $!";
         }
-        next unless $curtbl;
+      L1:
+        next unless $curtbl && $pertblfh;
         print $pertblfh $_;
     }
 
