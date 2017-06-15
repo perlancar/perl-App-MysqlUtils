@@ -397,7 +397,22 @@ $SPEC{mysql_run_sql_files} = {
         },
         %args_database,
         # XXX output_file_pattern
-        # XXX overwrite
+        overwrite_when => {
+            summary => 'Specify when to overwrite existing .txt file',
+            schema => ['str*', in=>[qw/none older always/]],
+            default => 'none',
+            description => <<'_',
+
+`none` means to never overwrite existing .txt file. `older` overwrites existing
+.txt file if it's older than the corresponding .sql file. `always` means to
+always overwrite existing .txt file.
+
+_
+            cmdline_aliases => {
+                o         => {summary=>'Shortcut for --overwrite_when=older' , is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'older' }},
+                O         => {summary=>'Shortcut for --overwrite_when=always', is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'always'}},
+            },
+        },
     },
     deps => {
         prog => 'mysql',
@@ -406,10 +421,30 @@ $SPEC{mysql_run_sql_files} = {
 sub mysql_run_sql_files {
     my %args = @_;
 
+    my $ov_when = $args{overwrite_when} // 'none';
+
     for my $sqlfile (@{ $args{sql_files} }) {
+
         my $txtfile = $sqlfile;
         $txtfile =~ s/\.sql$/.txt/i;
         if ($sqlfile eq $txtfile) { $txtfile .= ".txt" }
+
+        if (-f $txtfile) {
+            if ($ov_when eq 'always') {
+                $log->debugf("Overwriting existing %s ...", $txtfile);
+            } elsif ($ov_when eq 'older') {
+                if ((-M $txtfile) > (-M $sqlfile)) {
+                    $log->debugf("Overwriting existing %s because it is older than the corresponding %s ...", $txtfile, $sqlfile);
+                } else {
+                    $log->infof("%s already exists and newer than corresponding %s, skipped", $txtfile, $sqlfile);
+                    next;
+                }
+            } else {
+                $log->infof("%s already exists, we never overwrite existing .txt file, skipped", $txtfile);
+                next;
+            }
+        }
+
         $log->infof("Running SQL file '%s' and putting result to '%s' ...",
                     $sqlfile, $txtfile);
         my $cmd = join(
