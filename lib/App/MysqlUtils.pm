@@ -1,5 +1,7 @@
 package App::MysqlUtils;
 
+## no critic (InputOutput::RequireBriefOpen)
+
 # DATE
 # VERSION
 
@@ -444,6 +446,7 @@ sub mysql_sql_dump_extract_tables {
         next unless $curtbl && $pertblfh;
         print $pertblfh $_;
     }
+    close $pertblfh;
 
     [200, "OK"];
 }
