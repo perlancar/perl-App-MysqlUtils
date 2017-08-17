@@ -62,6 +62,25 @@ my %args_database = (
     },
 );
 
+my %args_overwrite_when = (
+    overwrite_when => {
+        summary => 'Specify when to overwrite existing .txt file',
+        schema => ['str*', in=>[qw/none older always/]],
+        default => 'none',
+        description => <<'_',
+
+`none` means to never overwrite existing .txt file. `older` overwrites existing
+.txt file if it's older than the corresponding .sql file. `always` means to
+always overwrite existing .txt file.
+
+_
+        cmdline_aliases => {
+            o         => {summary=>'Shortcut for --overwrite_when=older' , is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'older' }},
+            O         => {summary=>'Shortcut for --overwrite_when=always', is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'always'}},
+        },
+    },
+);
+
 $SPEC{':package'} = {
     v => 1.1,
     summary => 'CLI utilities related to MySQL',
@@ -442,22 +461,7 @@ $SPEC{mysql_run_sql_files} = {
         },
         %args_database,
         # XXX output_file_pattern
-        overwrite_when => {
-            summary => 'Specify when to overwrite existing .txt file',
-            schema => ['str*', in=>[qw/none older always/]],
-            default => 'none',
-            description => <<'_',
-
-`none` means to never overwrite existing .txt file. `older` overwrites existing
-.txt file if it's older than the corresponding .sql file. `always` means to
-always overwrite existing .txt file.
-
-_
-            cmdline_aliases => {
-                o         => {summary=>'Shortcut for --overwrite_when=older' , is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'older' }},
-                O         => {summary=>'Shortcut for --overwrite_when=always', is_flag=>1, code=>sub {$_[0]{overwrite_when} = 'always'}},
-            },
-        },
+        %args_overwrite_when,
     },
     deps => {
         prog => 'mysql',
@@ -497,6 +501,74 @@ sub mysql_run_sql_files {
             "mysql",
             shell_quote($args{database}),
             "<", shell_quote($sqlfile),
+            ">", shell_quote($txtfile),
+        );
+        system({log=>1}, $cmd);
+    }
+
+    [200, "OK"];
+}
+
+$SPEC{mysql_run_pl_files} = {
+    v => 1.1,
+    summary => 'Run each .pl file, feed the output to `mysql` command and '.
+        'write result to .txt file',
+    description => <<'_',
+
+The `.pl` file is supposed to produce a SQL statement. For simpler cases, use
+<prog:mysql-run-sql-files>.
+
+_
+    args => {
+        pl_files => {
+            schema => ['array*', of=>'filename*'],
+            req => 1,
+            pos => 0,
+            greedy => 1,
+        },
+        %args_database,
+        # XXX output_file_pattern
+        %args_overwrite_when,
+    },
+    deps => {
+        prog => 'mysql',
+    },
+};
+sub mysql_run_pl_files {
+    my %args = @_;
+
+    my $ov_when = $args{overwrite_when} // 'none';
+
+    for my $plfile (@{ $args{pl_files} }) {
+
+        my $txtfile = $plfile;
+        $txtfile =~ s/\.pl$/.txt/i;
+        if ($plfile eq $txtfile) { $txtfile .= ".txt" }
+
+        if (-f $txtfile) {
+            if ($ov_when eq 'always') {
+                log_debug("Overwriting existing %s ...", $txtfile);
+            } elsif ($ov_when eq 'older') {
+                if ((-M $txtfile) > (-M $plfile)) {
+                    log_debug("Overwriting existing %s because it is older than the corresponding %s ...", $txtfile, $plfile);
+                } else {
+                    log_info("%s already exists and newer than corresponding %s, skipped", $txtfile, $plfile);
+                    next;
+                }
+            } else {
+                log_info("%s already exists, we never overwrite existing .txt file, skipped", $txtfile);
+                next;
+            }
+        }
+
+        log_info("Running .pl file '%s' and putting result to '%s' ...",
+                    $plfile, $txtfile);
+        my $cmd = join(
+            " ",
+            "perl", shell_quote($plfile),
+            "|",
+            "mysql",
+            shell_quote($args{database}),
             ">", shell_quote($txtfile),
         );
         system({log=>1}, $cmd);
