@@ -1,3 +1,11 @@
+0.010   2017-10-25 (PERLANCAR)
+
+	- mysql-sql-dump-extract-tables: Add option --dir, by default do not
+	  overwrite existing files, add option --overwrite.
+
+	- [Bugfix] Don't close(undef).
+
+
 0.009   2017-08-17 (PERLANCAR)
 
 	- Add utility: mysql-run-pl-files.
