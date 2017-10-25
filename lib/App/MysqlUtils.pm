@@ -446,7 +446,7 @@ sub mysql_sql_dump_extract_tables {
         next unless $curtbl && $pertblfh;
         print $pertblfh $_;
     }
-    close $pertblfh;
+    close $pertblfh if defined $pertblfh;
 
     [200, "OK"];
 }
