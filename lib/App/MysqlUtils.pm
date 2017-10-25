@@ -394,6 +394,12 @@ $SPEC{mysql_sql_dump_extract_tables} = {
         overwrite => {
             schema => ['bool*', is=>1],
             cmdline_aliases => {O=>{}},
+            tags => ['category:output'],
+        },
+        dir => {
+            summary => 'Directory to put the SQL files into',
+            schema => 'dirname*',
+            tags => ['category:output'],
         },
         # XXX output_file_pattern
     },
@@ -424,6 +430,13 @@ sub mysql_sql_dump_extract_tables {
         if ($inc_tbl || $inc_tpat) { return 0 } else { return 1 }
     };
 
+    if (defined $args{dir}) {
+        unless (-d $args{dir}) {
+            log_info "Creating directory '%s' ...", $args{dir};
+            mkdir $args{dir}, 0755 or return [500, "Can't create directory '$args{dir}': $!"];
+        }
+    }
+
     # we use direct <>, instead of cmdline_src for speed
     my %seentables;
     while (<>) {
@@ -436,7 +449,7 @@ sub mysql_sql_dump_extract_tables {
                 last;
             }
             $curtbl = $1;
-            $pertblfile = "$curtbl";
+            $pertblfile = (defined $args{dir} ? "$args{dir}/" : "") . "$curtbl";
             if ($has_tbl_filters && !$code_tbl_is_included->($curtbl)) {
                 warn "SKIPPING table $curtbl because it is not included\n";
                 undef $pertblfh;
