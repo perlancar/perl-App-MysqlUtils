@@ -391,8 +391,11 @@ $SPEC{mysql_sql_dump_extract_tables} = {
         stop_after_table_pattern => {
             schema => 're*',
         },
+        overwrite => {
+            schema => ['bool*', is=>1],
+            cmdline_aliases => {O=>{}},
+        },
         # XXX output_file_pattern
-        # XXX overwrite
     },
 };
 sub mysql_sql_dump_extract_tables {
@@ -435,7 +438,10 @@ sub mysql_sql_dump_extract_tables {
             $curtbl = $1;
             $pertblfile = "$curtbl";
             if ($has_tbl_filters && !$code_tbl_is_included->($curtbl)) {
-                warn "SKIPPING table $curtbl\n";
+                warn "SKIPPING table $curtbl because it is not included\n";
+                undef $pertblfh;
+            } elsif ((-e $pertblfile) && !$args{overwrite}) {
+                warn "SKIPPING table $curtbl because file $pertblfile already exists\n";
                 undef $pertblfh;
             } else {
                 warn "Writing $pertblfile ...\n";
