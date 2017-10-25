@@ -451,13 +451,13 @@ sub mysql_sql_dump_extract_tables {
             $curtbl = $1;
             $pertblfile = (defined $args{dir} ? "$args{dir}/" : "") . "$curtbl";
             if ($has_tbl_filters && !$code_tbl_is_included->($curtbl)) {
-                warn "SKIPPING table $curtbl because it is not included\n";
+                log_warn "SKIPPING table $curtbl because it is not included";
                 undef $pertblfh;
             } elsif ((-e $pertblfile) && !$args{overwrite}) {
-                warn "SKIPPING table $curtbl because file $pertblfile already exists\n";
+                log_warn "SKIPPING table $curtbl because file $pertblfile already exists";
                 undef $pertblfh;
             } else {
-                warn "Writing $pertblfile ...\n";
+                log_warn "Writing $pertblfile ...";
                 open $pertblfh, ">", $pertblfile or die "Can't open $pertblfile: $!";
             }
         }
