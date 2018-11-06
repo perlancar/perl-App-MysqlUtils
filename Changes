@@ -1,3 +1,9 @@
+0.011   2018-11-06 (PERLANCAR)
+
+	- mysql-run-{sql,pl}-files: Add options --directory (-d) and
+	  --mkdir (-p).
+
+
 0.010   2017-10-25 (PERLANCAR)
 
 	- mysql-sql-dump-extract-tables: Add option --dir, by default do not
