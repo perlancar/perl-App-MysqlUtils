@@ -83,6 +83,25 @@ _
     },
 );
 
+my %args_output = (
+    directory => {
+        summary => 'Specify directory for the resulting *.txt files',
+        schema => 'dirname*',
+        default => '.',
+        cmdline_aliases => {
+            d => {},
+        },
+    },
+    mkdir => {
+        summary => 'Create output directory if not exists',
+        schema => ['true*'],
+        default => 1,
+        cmdline_aliases => {
+            p => {},
+        },
+    },
+);
+
 $SPEC{':package'} = {
     v => 1.1,
     summary => 'CLI utilities related to MySQL',
@@ -484,6 +503,7 @@ $SPEC{mysql_run_sql_files} = {
         %args_database,
         # XXX output_file_pattern
         %args_overwrite_when,
+        %args_output,
     },
     deps => {
         prog => 'mysql',
@@ -492,11 +512,17 @@ $SPEC{mysql_run_sql_files} = {
 sub mysql_run_sql_files {
     my %args = @_;
 
+    my $dir = $args{directory} // '.';
+    my $mkdir = $args{mkdir} // 1;
+    if (!(-d $dir) && $mkdir) {
+        require File::Path;
+        File::Path::make_path($dir);
+    }
     my $ov_when = $args{overwrite_when} // 'none';
 
     for my $sqlfile (@{ $args{sql_files} }) {
 
-        my $txtfile = $sqlfile;
+        my $txtfile = "$dir/$sqlfile";
         $txtfile =~ s/\.sql$/.txt/i;
         if ($sqlfile eq $txtfile) { $txtfile .= ".txt" }
 
@@ -551,6 +577,7 @@ _
         %args_database,
         # XXX output_file_pattern
         %args_overwrite_when,
+        %args_output,
     },
     deps => {
         prog => 'mysql',
@@ -559,11 +586,17 @@ _
 sub mysql_run_pl_files {
     my %args = @_;
 
+    my $dir = $args{directory} // '.';
+    my $mkdir = $args{mkdir} // 1;
+    if (!(-d $dir) && $mkdir) {
+        require File::Path;
+        File::Path::make_path($dir);
+    }
     my $ov_when = $args{overwrite_when} // 'none';
 
     for my $plfile (@{ $args{pl_files} }) {
 
-        my $txtfile = $plfile;
+        my $txtfile = "$dir/$plfile";
         $txtfile =~ s/\.pl$/.txt/i;
         if ($plfile eq $txtfile) { $txtfile .= ".txt" }
 
