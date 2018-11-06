@@ -385,24 +385,28 @@ $SPEC{mysql_sql_dump_extract_tables} = {
             'x.name.singular' => 'include_table',
             schema => ['array*', of=>'str*'],
             tags => ['category:filtering'],
+            cmdline_aliases => {I=>{}},
         },
         exclude_tables => {
             'x.name.is_plural' => 1,
             'x.name.singular' => 'exclude_table',
             schema => ['array*', of=>'str*'],
             tags => ['category:filtering'],
+            cmdline_aliases => {X=>{}},
         },
         include_table_patterns => {
             'x.name.is_plural' => 1,
             'x.name.singular' => 'include_table_pattern',
             schema => ['array*', of=>'re*'],
             tags => ['category:filtering'],
+            cmdline_aliases => {pat=>{}},
         },
         exclude_table_patterns => {
             'x.name.is_plural' => 1,
             'x.name.singular' => 'exclude_table_pattern',
             schema => ['array*', of=>'re*'],
             tags => ['category:filtering'],
+            cmdline_aliases => {xpat=>{}},
         },
         stop_after_table => {
             schema => 'str*',
