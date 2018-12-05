@@ -826,6 +826,92 @@ sub mysql_copy_rows_adjust_pk {
     }];
 }
 
+$SPEC{mysql_find_identical_rows} = {
+    v => 1.1,
+    summary => 'List rows on one table that are identical on another table',
+    args => {
+        %args_common,
+        %args_database0,
+        t1 => {
+            summary => 'Name of the first table',
+            schema => 'str*',
+            req => 1,
+            pos => 1,
+        },
+        t2 => {
+            summary => 'Name of the second table',
+            schema => 'str*',
+            req => 1,
+            pos => 2,
+        },
+        return_column => {
+            summary => 'What column to return',
+            schema => 'str*',
+            req => 1,
+        },
+        exclude_columns => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'exclude_column',
+            summary => 'What column(s) to exclude from comparison',
+            schema => ['array*', of=>'str*'],
+        },
+    },
+};
+sub mysql_find_identical_rows {
+    require Data::Cmp;
+    require DBIx::Diff::Schema;
+
+    my %args = @_;
+    my $exclude_columns = $args{exclude_columns} // [];
+
+    my $dbh = _connect(%args);
+
+    my @cols1_orig =
+        sort
+        map { $_->{COLUMN_NAME} }
+        DBIx::Diff::Schema::list_columns($dbh, $args{t1});
+    my @cols1 =
+        grep { my $col = $_; !(grep {$col eq $_} @$exclude_columns) }
+        @cols1_orig;
+
+    my @cols2 =
+        grep { my $col = $_; !(grep {$col eq $_} @$exclude_columns) }
+        sort
+        map { $_->{COLUMN_NAME} }
+        DBIx::Diff::Schema::list_columns($dbh, $args{t2});
+
+    Data::Cmp::cmp_data(\@cols1, \@cols2) == 0 or
+          return [412, "Columns are not the same between two tables"];
+
+    my $retidx = firstidx {$_ eq $args{return_column}} @cols1_orig;
+    $retidx >= 0 or return [412, "Return column '$args{return_column}' does not exist"];
+
+    my $sth_select_source = $dbh->prepare(
+        "SELECT ".join(",", $args{return_column}, map {"`$_`"} @cols1).
+            " FROM `$args{t1}`"
+        );
+    my $sth_select_target = $dbh->prepare(
+            "SELECT ".join(",", map {"`$_`"} @cols1).
+                " FROM `$args{t2}` WHERE ".
+                join(" AND ", map {"`$_`=?"} @cols1)
+            );
+
+    $sth_select_source->execute;
+    my $num_rows = 0;
+    my $num_identical = 0;
+    while (my @row1 = $sth_select_source->fetchrow_array) {
+        my $ret = shift @row1;
+        $num_rows++;
+        log_trace "Checking row #%d ...", $num_rows;
+
+        $sth_select_target->execute(@row1);
+        my @row2 = $sth_select_target->fetchrow_array or next;
+        print $ret, "\n";
+    }
+
+    [200, "OK"];
+}
+
 1;
 #ABSTRACT:
 
