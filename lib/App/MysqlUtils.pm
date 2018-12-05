@@ -11,6 +11,7 @@ use warnings;
 use Log::ger;
 
 use IPC::System::Options qw(system);
+use List::MoreUtils qw(firstidx);
 use Perinci::Object;
 use String::ShellQuote;
 
@@ -634,6 +635,195 @@ sub mysql_run_pl_files {
     }
 
     [200, "OK"];
+}
+
+$SPEC{mysql_copy_rows_adjust_pk} = {
+    v => 1.1,
+    summary => 'Copy rows from one table to another, adjust PK column if necessary',
+    description => <<'_',
+
+This utility can be used when you have rows in one table that you want to insert
+to another table, but the PK might clash. When that happens, the value of the
+other columns are inspected. When all the values of the other columns match, the
+row is assumed to be a duplicate and skipped. If some values of the other column
+differ, then the row is assumed to be different and a new value of the PK column
+is chosen (there are several choices on how to select the new PK).
+
+An example:
+
+    % mysql-copy-rows-adjust-pk db1 --from t1 --to t2 --pk-column id --adjust "add 1000"
+
+Suppose these are the rows in table `t1`:
+
+    id    date                 description        user
+    --    ----                 -----------        ----
+     1    2018-12-03 12:01:01  Created user u1    admin1
+     2    2018-12-03 12:44:33  Removed user u1    admin1
+
+And here are the rows in table `t2`:
+
+    id    date                 description        user
+    --    ----                 -----------        ----
+     1    2018-12-03 12:01:01  Created user u1    admin1
+     2    2018-12-03 13:00:45  Rebooted machine1  admin1
+     3    2018-12-03 13:05:00  Created user u2    admin2
+
+You can see that row id=1 in both tables are identical. This will be skipped. On
+the other hand, row id=2 in `t1` is different with row id=2 in `t2`. This row
+will be adjusted: `id` will be changed to 2+1000=1002. So the final rows in
+table `t2` will be (sorted by date):
+
+    id    date                 description        user
+    --    ----                 -----------        ----
+     1    2018-12-03 12:01:01  Created user u1    admin1
+     1002 2018-12-03 12:44:33  Removed user u1    admin1
+     2    2018-12-03 13:00:45  Rebooted machine1  admin1
+     3    2018-12-03 13:05:00  Created user u2    admin2
+
+So basically this utility is similar to MySQL's INSERT ... ON DUPLICATE KEY
+UPDATE, but will avoid inserting identical rows.
+
+If the adjusted PK column clashes with another row in the target table, the row
+is skipped.
+
+_
+    args => {
+        %args_common,
+        %args_database0,
+        from => {
+            summary => 'Name of source table',
+            schema => 'str*',
+            req => 1,
+        },
+        to => {
+            summary => 'Name of target table',
+            schema => 'str*',
+            req => 1,
+        },
+        pk_column => {
+            summary => 'Name of PK column',
+            schema => 'str*',
+            req => 1,
+        },
+        adjust => {
+            summary => 'How to adjust the value of the PK column',
+            schema => ['str*', match => qr/\A(add|subtract) \d+\z/],
+            req => 1,
+            description => <<'_',
+
+Currently the choices are:
+
+* "add N" add N to the original value.
+* "subtract N" subtract N from the original value.
+
+_
+        },
+    },
+    features => {
+        dry_run => 1,
+    },
+};
+sub mysql_copy_rows_adjust_pk {
+    require Data::Cmp;
+    require DBIx::Diff::Schema;
+
+    my %args = @_;
+
+    my $dbh = _connect(%args);
+
+    my @cols = map { $_->{COLUMN_NAME} }
+        DBIx::Diff::Schema::list_columns($dbh, $args{from});
+    my $pkidx = firstidx {$_ eq $args{pk_column}} @cols;
+    $pkidx >= 0 or return [412, "PK column '$args{pk_column}' does not exist"];
+
+    my $diff = DBIx::Diff::Schema::diff_table_schema(
+        $dbh, $dbh, $args{from}, $args{to},
+    );
+    if ($diff->{deleted_columns} && @{ $diff->{deleted_columns} } ||
+            $diff->{added_columns} && @{ $diff->{added_columns} } ||
+            $diff->{modified_columns} && keys %{ $diff->{modified_columns} }) {
+        return [412, "Structure of tables are different"];
+    }
+
+    my %from_row_ids;
+  GET_SOURCE_ROW_IDS: {
+        my $sth = $dbh->prepare("SELECT `$args{pk_column}` FROM `$args{from}`");
+        $sth->execute;
+        while (my @row = $sth->fetchrow_array) {
+            $from_row_ids{$row[0]}++;
+        }
+    }
+
+    my %to_row_ids;
+  GET_TARGET_ROW_IDS: {
+        my $sth = $dbh->prepare("SELECT `$args{pk_column}` FROM `$args{to}`");
+        $sth->execute;
+        while (my @row = $sth->fetchrow_array) {
+            $to_row_ids{$row[0]}++;
+        }
+    }
+
+    my $num_inserted = 0;
+    my $num_skipped  = 0;
+    my $num_adjusted = 0;
+  INSERT: {
+        my $sth_select_source = $dbh->prepare(
+            "SELECT ".join(",", map {"`$_`"} @cols).
+                " FROM `$args{from}` WHERE `$args{pk_column}`=?"
+            );
+        my $sth_select_target = $dbh->prepare(
+            "SELECT ".join(",", map {"`$_`"} @cols).
+                " FROM `$args{to}` WHERE `$args{pk_column}`=?"
+            );
+        my $sth_insert = $dbh->prepare(
+            "INSERT INTO `$args{to}` (".join(",", map {"`$_`"} @cols).
+                ") VALUES (".join(",", map {"?"} @cols).")"
+        );
+
+        for my $id (keys %from_row_ids) {
+            $sth_select_source->execute($id);
+            my @row = $sth_select_source->fetchrow_array;
+            if ($to_row_ids{$id}) {
+                # clashes
+                $sth_select_target->execute($id);
+                my @rowt = $sth_select_target->fetchrow_array;
+
+                if (Data::Cmp::cmp_data(\@row, \@rowt) == 0) {
+                    # identical, skip
+                    $num_skipped++;
+                    next;
+                } else {
+                    # not identical, adjust PK
+                    if ($args{adjust} =~ /\Aadd (\d+)\z/) {
+                        $row[$pkidx] += $1;
+                    } elsif ($args{adjust} =~ /\Asubtract (\d+)\z/) {
+                        $row[$pkidx] -= $1;
+                    }
+
+                    # does adjusted PK clash with an existing row? if yes, skip
+                    if ($to_row_ids{ $row[$pkidx] }) {
+                        $num_skipped++;
+                        next;
+                    }
+
+                    $num_adjusted++;
+                }
+            }
+
+            if ($args{-dry_run}) {
+                log_trace "[DRY-RUN] Inserting %s", \@row;
+            } else {
+                $sth_insert->execute(@row);
+            }
+            $num_inserted++;
+        }
+    }
+
+    [200, "OK", undef, {
+        "func.num_inserted" => $num_inserted,
+        "func.num_skipped"  => $num_skipped,
+        "func.num_adjusted" => $num_adjusted,
+    }];
 }
 
 1;
