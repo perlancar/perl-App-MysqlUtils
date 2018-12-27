@@ -315,6 +315,92 @@ sub mysql_drop_tables {
     $res->as_struct;
 }
 
+$SPEC{mysql_drop_dbs} = {
+    v => 1.1,
+    summary => 'Drop MySQL databases',
+    description => <<'_',
+
+For safety, the default is dry-run mode. To actually drop the databases, you
+must supply `--no-dry-run` or DRY_RUN=0.
+
+Examples:
+
+    # Drop dbs D1, D2, D3 (dry-run mode)
+    % mysql-drop-dbs D1 D2 D3
+
+    # Drop all dbs with names matching /^testdb/ (dry-run mode)
+    % mysql-drop-dbs --db-pattern ^testdb
+
+    # Actually drop all dbs with names matching /^testdb/, don't delete more than 5 dbs
+    % mysql-drop-dbs --db-pattern ^testdb --limit 5 --no-dry-run
+
+_
+    args => {
+        %args_common,
+        dbs => {
+            'x.name.is_plural' => 1,
+            'x.name.singular' => 'db',
+            schema => ['array*', of=>'str*'],
+            element_completion => \&_complete_database,
+            pos => 1,
+            greedy => 1,
+        },
+        db_pattern => {
+            schema => 're*',
+        },
+        limit => {
+            summary => "Don't delete more than this number of databases",
+            schema => 'posint*',
+        },
+    },
+    args_rels => {
+        req_one => [qw/dbs db_pattern/],
+    },
+    features => {
+        dry_run => {default=>1},
+    },
+};
+sub mysql_drop_dbs {
+    my %args = @_;
+
+    my $dbh = _connect(%args);
+
+    my $sth = $dbh->prepare("SHOW DATABASES");
+    $sth->execute;
+
+    my $res = envresmulti();
+    my $n = 0;
+  DB:
+    while (my ($db) = $sth->fetchrow_array) {
+        if ($args{dbs}) {
+            my $found;
+            for (@{ $args{dbs} }) {
+                if ($_ eq $db) {
+                    $found++; last;
+                }
+            }
+            next DB unless $found;
+        }
+        if ($args{db_pattern}) {
+            next DB unless $db =~ /$args{db_pattern}/;
+        }
+        $n++;
+        if (defined $args{limit} && $n > $args{limit}) {
+            last;
+        }
+
+        if ($args{-dry_run}) {
+            log_info("[DRY_RUN] Dropping database %s ...", $db);
+            $res->add_result(304, "OK (dry-run)", {item_id=>$db});
+        } else {
+            log_info("Dropping database %s ...", $db);
+            $dbh->do("DROP DATABASE `$db`");
+            $res->add_result(200, "OK", {item_id=>$db});
+        }
+    }
+    $res->as_struct;
+}
+
 $SPEC{mysql_query} = {
     v => 1.1,
     summary => 'Run query and return table result',
