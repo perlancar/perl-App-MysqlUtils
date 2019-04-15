@@ -103,6 +103,16 @@ my %args_output = (
     },
 );
 
+my %argscsv_filename1 = (
+    filename => {
+        summary => 'Input CSV file',
+        schema => 'filename*',
+        req => 1,
+        pos => 1,
+        cmdline_aliases => {f=>{}},
+    },
+);
+
 $SPEC{':package'} = {
     v => 1.1,
     summary => 'CLI utilities related to MySQL',
@@ -996,6 +1006,85 @@ sub mysql_find_identical_rows {
     }
 
     [200, "OK"];
+}
+
+$SPEC{mysql_fill_csv_columns_from_query} = {
+    v => 1.1,
+    summary => 'Fill CSV columns with data from a query',
+    description => <<'_',
+
+This utility is handy if you have a partially filled table (in CSV format, which
+you can convert from spreadsheet or Google Sheet or whatever), where you have
+some unique key already specified in the table (e.g. customer_id) and you want
+to fill up other columns (e.g. customer_name, customer_email, last_order_date) from a
+query:
+
+    % mysql-fill-csv-columns-from-query DBNAME TABLE.csv 'SELECT c.NAME customer_name, c.email customer_email, (SELECT date FROM tblorders WHERE client_id=$customer_id ORDER BY date DESC LIMIT 1) last_order_time FROM tblclients WHERE id=$customer_id'
+
+The `$NAME` in the query will be replaced by actual CSV column value. SELECT
+fields must correspond to the CSV column names. For each row, a new query will
+be executed and the first result row is used.
+
+_
+    args => {
+        %args_common,
+        %args_database0,
+        %argscsv_filename1,
+        query => {
+            schema => 'str*',
+            req => 1,
+            pos => 2,
+        },
+    },
+    features => {
+        dry_run => 1,
+    },
+};
+sub mysql_fill_csv_columns_from_query {
+    require App::CSVUtils;
+    require Text::CSV::FromAOH;
+
+    my %args = @_;
+
+    my $dbh = _connect(%args);
+
+    my $aoh = [];
+    my $field_idxs;
+    my $columns_set;
+    my $res = App::CSVUtils::csvutil(
+        action => 'each-row',
+        filename => $args{filename},
+        hash => 1,
+        eval => sub {
+            $field_idxs //= { %{ $main::field_idxs } };
+
+            my $query = $args{query};
+            $query =~ s/\$(\w+)/exists($_->{$1}) ? $dbh->quote($_->{$1}) : "\$$1"/eg;
+            log_trace "Row query: %s", $query;
+            return if $args{-dry_run};
+            my $sth = $dbh->prepare($query);
+            $sth->execute;
+            my $row = $sth->fetchrow_arrayref;
+            if ($row) {
+                # register additional csv columns
+                unless ($columns_set++) {
+                    for my $c (@{ $sth->{NAME} }) {
+                        $field_idxs->{ $c } //= (keys %$field_idxs)-1;
+                    }
+                }
+                for my $i (0 .. $#{ $sth->{NAME} }) {
+                    my $c = $sth->{NAME}[$i];
+                    $_->{$c} = $row->[$i];
+                }
+            }
+            log_trace "Resulting row: %s", $_;
+            push @$aoh, $_;
+        },
+    );
+    return $res unless $res->[0] == 200;
+
+    [200, "OK",
+     Text::CSV::FromAOH::csv_from_aoh($aoh, field_idxs=>$field_idxs)];
 }
 
 1;
