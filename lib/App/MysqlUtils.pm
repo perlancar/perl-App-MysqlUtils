@@ -10,6 +10,7 @@ use strict;
 use warnings;
 use Log::ger;
 
+use App::CSVUtils;
 use IPC::System::Options qw(system);
 use List::MoreUtils qw(firstidx);
 use Perinci::Object;
@@ -1029,6 +1030,7 @@ _
     args => {
         %args_common,
         %args_database0,
+        %App::CSVUtils::args_common,
         %argscsv_filename1,
         query => {
             schema => 'str*',
@@ -1041,7 +1043,6 @@ _
     },
 };
 sub mysql_fill_csv_columns_from_query {
-    require App::CSVUtils;
     require Text::CSV::FromAOH;
 
     my %args = @_;
@@ -1052,6 +1053,10 @@ sub mysql_fill_csv_columns_from_query {
     my $field_idxs;
     my $columns_set;
     my $res = App::CSVUtils::csvutil(
+        # common csvutil arg
+        header => $args{header} // 1,
+        tsv => $args{tsv},
+
         action => 'each-row',
         filename => $args{filename},
         hash => 1,
