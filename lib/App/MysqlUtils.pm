@@ -1037,6 +1037,11 @@ _
             req => 1,
             pos => 2,
         },
+        count => {
+            summary => 'Instead of returning the CSV rows, just return the count of rows that get filled',
+            schema => 'bool',
+            cmdline_aliases => {c=>{}},
+        },
     },
     features => {
         dry_run => 1,
@@ -1052,6 +1057,7 @@ sub mysql_fill_csv_columns_from_query {
     my $aoh = [];
     my $field_idxs;
     my $columns_set;
+    my $num_filled = 0;
     my $res = App::CSVUtils::csvutil(
         # common csvutil arg
         header => $args{header} // 1,
@@ -1070,6 +1076,7 @@ sub mysql_fill_csv_columns_from_query {
             my $sth = $dbh->prepare($query);
             $sth->execute;
             my $row = $sth->fetchrow_arrayref;
+            my $row_filled;
             if ($row) {
                 # register additional csv columns
                 unless ($columns_set++) {
@@ -1080,16 +1087,24 @@ sub mysql_fill_csv_columns_from_query {
                 for my $i (0 .. $#{ $sth->{NAME} }) {
                     my $c = $sth->{NAME}[$i];
                     $_->{$c} = $row->[$i];
+                    $row_filled++ if defined $row->[$i] && $row->[$i] ne '';
                 }
             }
+            $num_filled++ if $row_filled;
             log_trace "Resulting row: %s", $_;
-            push @$aoh, $_;
+            unless ($args{count}) {
+                push @$aoh, $_;
+            }
         },
     );
     return $res unless $res->[0] == 200;
 
-    [200, "OK",
-     Text::CSV::FromAOH::csv_from_aoh($aoh, field_idxs=>$field_idxs)];
+    if ($args{count}) {
+        [200, "OK", $num_filled];
+    } else {
+        [200, "OK",
+         Text::CSV::FromAOH::csv_from_aoh($aoh, field_idxs=>$field_idxs)];
+    }
 }
 
 1;
