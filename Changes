@@ -1,3 +1,12 @@
+0.019   2019-11-14  Released-By: PERLANCAR; Urgency: low
+
+        - No functional changes.
+
+        - [build] Rebuild with updated Perinci::Sub::To::CLIDocData which shows
+          the more helpful --no-dry-run in help/POD for scripts that run in
+          dry-run mode by default (e.g. mysql-drop-all-tables).
+
+
 0.018   2019-04-26  Released-By: PERLANCAR
 
 	- mysql-fill-csv-columns-from-query: Add option --count (-c).
