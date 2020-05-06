@@ -823,13 +823,14 @@ _
 sub mysql_copy_rows_adjust_pk {
     require Data::Cmp;
     require DBIx::Diff::Schema;
+    require DBIx::Util::Schema;
 
     my %args = @_;
 
     my $dbh = _connect(%args);
 
     my @cols = map { $_->{COLUMN_NAME} }
-        DBIx::Diff::Schema::list_columns($dbh, $args{from});
+        DBIx::Util::Schema::list_columns($dbh, $args{from});
     my $pkidx = firstidx {$_ eq $args{pk_column}} @cols;
     $pkidx >= 0 or return [412, "PK column '$args{pk_column}' does not exist"];
 
@@ -956,6 +957,7 @@ $SPEC{mysql_find_identical_rows} = {
 };
 sub mysql_find_identical_rows {
     require Data::Cmp;
+    require DBIx::Util::Schema;
     require DBIx::Diff::Schema;
 
     my %args = @_;
@@ -966,7 +968,7 @@ sub mysql_find_identical_rows {
     my @cols1_orig =
         sort
         map { $_->{COLUMN_NAME} }
-        DBIx::Diff::Schema::list_columns($dbh, $args{t1});
+        DBIx::Util::Schema::list_columns($dbh, $args{t1});
     my @cols1 =
         grep { my $col = $_; !(grep {$col eq $_} @$exclude_columns) }
         @cols1_orig;
@@ -975,7 +977,7 @@ sub mysql_find_identical_rows {
         grep { my $col = $_; !(grep {$col eq $_} @$exclude_columns) }
         sort
         map { $_->{COLUMN_NAME} }
-        DBIx::Diff::Schema::list_columns($dbh, $args{t2});
+        DBIx::Util::Schema::list_columns($dbh, $args{t2});
 
     Data::Cmp::cmp_data(\@cols1, \@cols2) == 0 or
           return [412, "Columns are not the same between two tables"];
